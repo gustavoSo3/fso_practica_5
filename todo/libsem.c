@@ -1,5 +1,6 @@
 #include <pthread_utils.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <libsem.h>
 
 // Macro que incluye el código de la instrucción máquina xchg
@@ -41,8 +42,9 @@ void semaphore_wait(SEMAPHORE s)
 		atomic_xchg(l, g);
 	} while (l != 0);
 
+	s->count--;
 	// Recuerda quye se debe actualizar el contador del semáforo
-	if (--(s->count) < 0)
+	if (s->count < 0)
 	{
 
 		//	- Antes de bloquearlo hay que:
@@ -51,10 +53,15 @@ void semaphore_wait(SEMAPHORE s)
 		//	-	2.- Guardar el tid en la cola del semáforo con queue_offer
 		queue_offer(s->queue, tid);
 		//			Un detalle muy importante es que antes de que el hilo se bloquée, debe liberar el atomic_xchg()
+		//	-	3.- Finalmente bloquear al hilo (block_thread)
 		g = 0;
 		l = 1;
-		//	-	3.- Finalmente bloquear al hilo (block_thread)
 		block_thread(tid);
+	}
+	else
+	{
+		g = 0;
+		l = 1;
 	}
 }
 
@@ -69,14 +76,11 @@ void semaphore_signal(SEMAPHORE s)
 	{
 		atomic_xchg(l, g);
 	} while (l != 0);
-
-	if (++(s->count) <= 0)
+	s->count++;
+	if (s->count <= 0)
 	{
-		if (!queue_is_empty(s->queue))
-		{
-			pthread_t tid_to_unlock = queue_poll(s->queue);
-			unblock_thread(tid_to_unlock);
-		}
+		pthread_t tid_to_unlock = queue_poll(s->queue);
+		unblock_thread(tid_to_unlock);
 	}
 	g = 0;
 	l = 1;
